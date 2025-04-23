@@ -4,14 +4,23 @@ import Controller from "./interfaces/controller.interface";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
 
+import http from "http";
+import { Server, Socket } from "socket.io";
+import cors from "cors";
+
+
 class App {
     public app: express.Application;
+    private server: http.Server;
+    public io: Server;
 
 
     constructor(controllers: Controller[]) {
         this.app = express();
+        this.server = http.createServer(this.app);
 
         this.initializeMiddlewares();
+        this.initializeSocket();
         this.initializeControllers(controllers);
         this.connectToDatabase();
     }
@@ -30,7 +39,58 @@ class App {
     private initializeMiddlewares():void{
         this.app.use (bodyParser.json());
     }
-    private async connectToDatabase(): Promise<void> {
+
+    private initializeSocket(): void {
+        this.io = new Server(this.server, {
+            cors: {
+                origin: "http://localhost:5173",
+                methods: ["GET", "POST"],
+                allowedHeaders: ["Authorization"],
+                credentials: true
+            },
+        });
+
+
+        this.io.on("connection", (socket: Socket) => {
+            console.log(`Nowe połączenie: ${socket.id}`);
+
+
+            socket.on("message", (data: string) => {
+                console.log(`Wiadomość od ${socket.id}: ${data}`);
+                this.io.emit("message", data);
+            });
+
+
+            socket.on("disconnect", () => {
+                console.log(`Rozłączono: ${socket.id}`);
+            });
+        });
+
+
+        this.server.listen(config.socketPort, () => {
+            console.log(`WebSocket listening on port ${config.socketPort}`);
+        });
+        this.simulateIoTData();
+    }
+
+
+    public getIo(): Server {
+        return this.io;
+    }
+    private simulateIoTData(): void {
+        setInterval(() => {
+            const data = {
+                temperature: (20 + Math.random() * 5).toFixed(1),
+                humidity: (50 + Math.random() * 10).toFixed(1),
+                pressure: (1000 + Math.random() * 10).toFixed(1),
+            };
+
+            console.log(" Wysyłam dane z czujnika:", data);
+            this.io.emit("sensor-data", data);
+        }, 3000);
+    }
+
+        private async connectToDatabase(): Promise<void> {
         mongoose.set('debug', true);
         try {
             // Próba nawiązania połączenia z bazą danych MongoDB
